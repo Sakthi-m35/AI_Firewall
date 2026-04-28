@@ -1,0 +1,38 @@
+# ============================================================
+# Dockerfile.api — AI Firewall API
+# ============================================================
+FROM python:3.11-slim AS base
+
+# System dependencies for Scapy + ML libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpcap-dev \
+    libgomp1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies first (layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY modules/ ./modules/
+COPY api_main.py .
+
+# Create directories for model artifacts and logs
+RUN mkdir -p models logs
+
+# Non-root user for security
+RUN useradd -m -u 1001 ngf && chown -R ngf:ngf /app
+USER ngf
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["python", "-m", "uvicorn", "api_main:app", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "2", "--log-level", "info"]
